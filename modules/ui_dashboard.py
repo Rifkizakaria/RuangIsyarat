@@ -1,26 +1,135 @@
-import customtkinter as ctk
-from config import (
-    COLOR_BG_CARD,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_ACCENT,
-    COLOR_BTN_PRIMARY,
-    COLOR_BTN_PRIMARY_HOVER,
-    COLOR_BTN_SECONDARY,
-    COLOR_BTN_SECONDARY_HOVER,
-    COLOR_BTN_ACCENT,
-    COLOR_BTN_ACCENT_HOVER,
-    COLOR_BTN_TEXT,
-    FONT_TITLE,
-    FONT_BODY,
-    FONT_BUTTON,
-    CORNER_RADIUS,
+#!/usr/bin/env python
+"""SABLE Editorial Monochrome Dashboard View for RuangIsyarat (PyQt6)."""
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QPushButton, QFrame, QSizePolicy
 )
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QCursor
+
+import config
 
 
-class DashboardView(ctk.CTkFrame):
-    def __init__(self, master, nickname: str, on_kamus, on_deteksi, on_kuis, on_logout):
-        super().__init__(master, fg_color="transparent")
+class EditorialCard(QFrame):
+    """SABLE 3:4 Aspect Ratio Editorial Card with hover reveal action."""
+
+    def __init__(self, index_text: str, title_text: str, subtitle_text: str, on_click=None, parent=None):
+        super().__init__(parent)
+        self.on_click = on_click
+        self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.setMinimumSize(285, 380)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.setStyleSheet(f"""
+            EditorialCard {{
+                background-color: {config.BONE_COLOR};
+                border: 1px solid {config.INK_COLOR};
+                border-radius: 0px;
+            }}
+        """)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(28, 28, 28, 28)
+        layout.setSpacing(8)
+
+        # Top-Left Index ("01", "02", "03")
+        self.lbl_index = QLabel(index_text.upper())
+        self.lbl_index.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        self.lbl_index.setStyleSheet(f"""
+            color: {config.INK_COLOR};
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            border: none;
+        """)
+        layout.addWidget(self.lbl_index)
+
+        layout.addStretch(1)
+
+        # Center-Bottom Title & Subtitle
+        self.lbl_title = QLabel(title_text.upper())
+        self.lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_title.setStyleSheet(f"""
+            color: {config.INK_COLOR};
+            font-size: 36px;
+            font-weight: 800;
+            letter-spacing: -1px;
+            text-transform: uppercase;
+            border: none;
+        """)
+        layout.addWidget(self.lbl_title)
+
+        self.lbl_subtitle = QLabel(subtitle_text.upper())
+        self.lbl_subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_subtitle.setWordWrap(True)
+        self.lbl_subtitle.setStyleSheet(f"""
+            color: {config.INK_COLOR};
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            border: none;
+            padding-bottom: 12px;
+        """)
+        layout.addWidget(self.lbl_subtitle)
+
+        # Hover Reveal Action ("BUKA MODUL")
+        self.btn_open = QPushButton("BUKA MODUL")
+        self.btn_open.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self.btn_open.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {config.INK_COLOR};
+                color: {config.BONE_COLOR};
+                border: 1px solid {config.INK_COLOR};
+                padding: 12px 24px;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 2px;
+                text-transform: uppercase;
+                border-radius: 0px;
+            }}
+        """)
+        self.btn_open.setVisible(False)
+        if self.on_click:
+            self.btn_open.clicked.connect(self.on_click)
+        layout.addWidget(self.btn_open)
+
+    def enterEvent(self, event):
+        self.btn_open.setVisible(True)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.btn_open.setVisible(False)
+        super().leaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.on_click:
+            self.on_click()
+        super().mousePressEvent(event)
+
+    def resizeEvent(self, event):
+        # Pertahankan proporsi rasio 3:4
+        w = self.width()
+        target_h = int((w * 4) / 3)
+        if abs(self.height() - target_h) > 40:
+            self.setMinimumHeight(min(460, max(360, target_h)))
+        super().resizeEvent(event)
+
+
+class DashboardUI(QWidget):
+    """SABLE Editorial Monochrome Dashboard View (#cats 3-column grid)."""
+
+    def __init__(
+        self,
+        master=None,
+        nickname: str = "PENGGUNA",
+        on_kamus=None,
+        on_deteksi=None,
+        on_kuis=None,
+        on_logout=None,
+    ):
+        super().__init__(master)
+        self.master = master
         self.nickname = nickname
         self.on_kamus = on_kamus
         self.on_deteksi = on_deteksi
@@ -30,86 +139,93 @@ class DashboardView(ctk.CTkFrame):
         self._build_ui()
 
     def _build_ui(self):
-        # Header Bar
-        header_frame = ctk.CTkFrame(self, fg_color=COLOR_BG_CARD, corner_radius=CORNER_RADIUS)
-        header_frame.pack(fill="x", padx=30, pady=(20, 15))
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(48, 36, 48, 48)
+        main_layout.setSpacing(28)
 
-        lbl_welcome = ctk.CTkLabel(
-            header_frame,
-            text=f"Selamat Datang, {self.nickname}!",
-            font=FONT_TITLE,
-            text_color=COLOR_TEXT_ACCENT,
-            anchor="w",
+        # Editorial Section Header
+        header_row = QHBoxLayout()
+        header_row.setContentsMargins(0, 0, 0, 0)
+
+        self.lbl_hero = QLabel("INDEKS MODUL UTAMA")
+        self.lbl_hero.setStyleSheet(f"""
+            color: {config.INK_COLOR};
+            font-size: 48px;
+            font-weight: 800;
+            letter-spacing: -2px;
+            text-transform: uppercase;
+        """)
+        header_row.addWidget(self.lbl_hero)
+
+        header_row.addStretch(1)
+
+        self.lbl_session = QLabel(f"OPERATOR // {self.nickname.upper()}")
+        self.lbl_session.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.lbl_session.setStyleSheet(f"""
+            color: {config.INK_COLOR};
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        """)
+        header_row.addWidget(self.lbl_session)
+
+        main_layout.addLayout(header_row)
+
+        # 3-Column Grid Layout (#cats)
+        self.grid_layout = QGridLayout()
+        self.grid_layout.setContentsMargins(0, 0, 0, 0)
+        self.grid_layout.setHorizontalSpacing(24)
+        self.grid_layout.setVerticalSpacing(24)
+        self.grid_layout.setColumnStretch(0, 1)
+        self.grid_layout.setColumnStretch(1, 1)
+        self.grid_layout.setColumnStretch(2, 1)
+
+        self.card_kamus = EditorialCard(
+            index_text="01",
+            title_text="KAMUS",
+            subtitle_text="ARSIP VISUAL STANDAR ASL / SIBI / BISINDO",
+            on_click=self._open_kamus,
+            parent=self,
         )
-        lbl_welcome.pack(side="left", padx=25, pady=20)
+        self.grid_layout.addWidget(self.card_kamus, 0, 0)
 
-        btn_logout = ctk.CTkButton(
-            header_frame,
-            text="Logout",
-            font=FONT_BUTTON,
-            fg_color=COLOR_BTN_SECONDARY,
-            hover_color=COLOR_BTN_SECONDARY_HOVER,
-            text_color=COLOR_BTN_TEXT,
-            width=120,
-            height=44,
-            corner_radius=CORNER_RADIUS,
-            command=self.on_logout,
+        self.card_deteksi = EditorialCard(
+            index_text="02",
+            title_text="DETEKSI",
+            subtitle_text="PEMINDAIAN GESTUR TANGAN REAL-TIME AI",
+            on_click=self._open_deteksi,
+            parent=self,
         )
-        btn_logout.pack(side="right", padx=25, pady=20)
+        self.grid_layout.addWidget(self.card_deteksi, 0, 1)
 
-        # Deskripsi Singkat
-        lbl_desc = ctk.CTkLabel(
-            self,
-            text="Pusat navigasi RuangIsyarat. Pilih salah satu modul di bawah ini untuk belajar,\nmemindai gerakan isyarat melalui kamera, atau menguji pemahaman Anda.",
-            font=FONT_BODY,
-            text_color=COLOR_TEXT_SECONDARY,
-            justify="center",
+        self.card_kuis = EditorialCard(
+            index_text="03",
+            title_text="KUIS",
+            subtitle_text="EVALUASI KETAHANAN GESTUR & SKOR",
+            on_click=self._open_kuis,
+            parent=self,
         )
-        lbl_desc.pack(pady=(5, 25))
+        self.grid_layout.addWidget(self.card_kuis, 0, 2)
 
-        # Grid Tombol Modul Raksasa
-        menu_frame = ctk.CTkFrame(self, fg_color="transparent")
-        menu_frame.pack(fill="both", expand=True, padx=30, pady=10)
+        main_layout.addLayout(self.grid_layout, 1)
 
-        menu_frame.grid_columnconfigure((0, 1, 2), weight=1, uniform="group1")
-        menu_frame.grid_rowconfigure(0, weight=1)
+    def set_nickname(self, nickname: str):
+        self.nickname = nickname or "PENGGUNA"
+        self.lbl_session.setText(f"OPERATOR // {self.nickname.upper()}")
 
-        # Tombol 1: Kamus
-        btn_kamus = ctk.CTkButton(
-            menu_frame,
-            text="📖\n\nKamus Isyarat\n(Edukasi)",
-            font=FONT_BUTTON,
-            fg_color=COLOR_BTN_PRIMARY,
-            hover_color=COLOR_BTN_PRIMARY_HOVER,
-            text_color=COLOR_BTN_TEXT,
-            corner_radius=CORNER_RADIUS,
-            command=self.on_kamus,
-        )
-        btn_kamus.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
+    def _open_kamus(self):
+        if self.on_kamus:
+            self.on_kamus()
 
-        # Tombol 2: Deteksi AI
-        btn_deteksi = ctk.CTkButton(
-            menu_frame,
-            text="📷\n\nMulai Deteksi\n(Kamera Real-Time)",
-            font=FONT_BUTTON,
-            fg_color=COLOR_BTN_ACCENT,
-            hover_color=COLOR_BTN_ACCENT_HOVER,
-            text_color=COLOR_BTN_TEXT,
-            corner_radius=CORNER_RADIUS,
-            command=self.on_deteksi,
-        )
-        btn_deteksi.grid(row=0, column=1, padx=15, pady=15, sticky="nsew")
+    def _open_deteksi(self):
+        if self.on_deteksi:
+            self.on_deteksi()
 
-        # Tombol 3: Mode Kuis
-        btn_kuis = ctk.CTkButton(
-            menu_frame,
-            text="🎯\n\nMode Kuis\n(Evaluasi Gestur)",
-            font=FONT_BUTTON,
-            fg_color=COLOR_BTN_PRIMARY,
-            hover_color=COLOR_BTN_PRIMARY_HOVER,
-            text_color=COLOR_BTN_TEXT,
-            corner_radius=CORNER_RADIUS,
-            command=self.on_kuis,
-        )
-        btn_kuis.grid(row=0, column=2, padx=15, pady=15, sticky="nsew")
+    def _open_kuis(self):
+        if self.on_kuis:
+            self.on_kuis()
 
+
+# Alias kompatibilitas
+DashboardView = DashboardUI

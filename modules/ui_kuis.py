@@ -1,239 +1,282 @@
+#!/usr/bin/env python
+"""SABLE Editorial Monochrome Kuis View for RuangIsyarat (PyQt6)."""
+
 import random
 import string
-import customtkinter as ctk
-from PIL import Image
-from config import (
-    COLOR_BG_CARD,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_ACCENT,
-    COLOR_BTN_SECONDARY,
-    COLOR_BTN_SECONDARY_HOVER,
-    COLOR_BTN_TEXT,
-    COLOR_STATUS_SUCCESS,
-    COLOR_STATUS_ERROR,
-    FONT_TITLE,
-    FONT_SUBTITLE,
-    FONT_HEADING,
-    FONT_BODY,
-    FONT_BUTTON,
-    CORNER_RADIUS,
+import time
+import cv2
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QFrame,
+    QLabel, QPushButton, QSpacerItem, QSizePolicy
 )
-from core_ai.vision_thread import CameraVisionThread
+from PyQt6.QtCore import Qt, QTimer, pyqtSlot, QSize
+from PyQt6.QtGui import QImage, QPixmap
+
+import config
+from core_ai.camera import CameraThread
+from core_ai.model_store import ModelStore
 
 
-class KuisView(ctk.CTkFrame):
-    CONSECUTIVE_REQUIRED = 20
+class KuisUI(QWidget):
+    """SABLE Editorial Monochrome Kuis Evaluasi View dengan elemen terpusat."""
 
-    def __init__(self, master, on_back):
-        super().__init__(master, fg_color="transparent")
+    TRACK_WIDTH = 520
+
+    def __init__(self, master=None, on_back=None):
+        super().__init__(master)
+        self.master = master
         self.on_back = on_back
-        self.after_id = None
 
-        # State Evaluasi & Gamifikasi
         self.skor = 0
         self.target_huruf = random.choice(string.ascii_uppercase)
-        self.consecutive_match = 0
-        self.feedback_timer = 0
+        self.hold_start_time = None
+        self.hold_required = 2.0
 
+        self.camera_thread = None
+        self.running = False
+
+        self.feedback_timer = QTimer(self)
+        self.feedback_timer.setSingleShot(True)
+        self.feedback_timer.timeout.connect(self._hide_feedback)
+
+        ModelStore().init()
         self._build_ui()
-        self._start_camera_thread()
 
     def _build_ui(self):
-        # Header Navigasi & Papan Skor
-        nav_frame = ctk.CTkFrame(self, fg_color=COLOR_BG_CARD, corner_radius=CORNER_RADIUS)
-        nav_frame.pack(fill="x", padx=30, pady=(20, 15))
+        # Sentralisasi penuh menggunakan VBox dan HBox Spacer
+        outer_vbox = QVBoxLayout(self)
+        outer_vbox.setContentsMargins(48, 24, 48, 24)
+        outer_vbox.setSpacing(0)
 
-        btn_stop = ctk.CTkButton(
-            nav_frame,
-            text="← Berhenti & Kembali",
-            font=FONT_BUTTON,
-            fg_color=COLOR_BTN_SECONDARY,
-            hover_color=COLOR_BTN_SECONDARY_HOVER,
-            text_color=COLOR_BTN_TEXT,
-            width=200,
-            height=44,
-            corner_radius=CORNER_RADIUS,
-            command=self.stop_and_exit,
+        outer_vbox.addSpacerItem(
+            QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         )
-        btn_stop.pack(side="left", padx=20, pady=15)
 
-        lbl_title = ctk.CTkLabel(
-            nav_frame,
-            text="Mode Kuis Isyarat",
-            font=FONT_TITLE,
-            text_color=COLOR_TEXT_ACCENT,
+        center_hbox = QHBoxLayout()
+        center_hbox.addSpacerItem(
+            QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         )
-        lbl_title.pack(side="left", padx=20, pady=15)
 
-        self.lbl_score = ctk.CTkLabel(
-            nav_frame,
-            text=f"Skor: {self.skor}",
-            font=("Helvetica", 24, "bold"),
-            text_color=COLOR_STATUS_SUCCESS,
+        # Kontainer Utama di Tengah Layar
+        content_box = QWidget(self)
+        content_layout = QVBoxLayout(content_box)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(16)
+        content_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+
+        # Metadata Skor
+        self.lbl_score = QLabel(f"03 // EVALUASI KUIS — SKOR: {self.skor}")
+        self.lbl_score.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_score.setStyleSheet(f"""
+            color: {config.INK_COLOR};
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border: none;
+        """)
+        content_layout.addWidget(self.lbl_score, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        # Tipografi Hero: QLabel Raksasa (font-size: 100px, font-weight: 800)
+        self.lbl_target = QLabel(f"PERAGAKAN: [ {self.target_huruf} ]")
+        self.lbl_target.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_target.setStyleSheet(f"""
+            color: {config.INK_COLOR};
+            font-size: 100px;
+            font-weight: 800;
+            letter-spacing: -2px;
+            text-transform: uppercase;
+            border: none;
+        """)
+        content_layout.addWidget(self.lbl_target, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        # Custom SABLE Thin Progress Bar (QFrame height: 2px, border 1px solid #101010)
+        self.progress_track = QFrame(content_box)
+        self.progress_track.setFixedSize(self.TRACK_WIDTH, 2)
+        self.progress_track.setStyleSheet(f"""
+            QFrame {{
+                background-color: transparent;
+                border: 1px solid {config.INK_COLOR};
+                border-radius: 0px;
+            }}
+        """)
+
+        self.progress_fill = QFrame(self.progress_track)
+        self.progress_fill.setGeometry(0, 0, 0, 2)
+        self.progress_fill.setStyleSheet(f"""
+            QFrame {{
+                background-color: {config.INK_COLOR};
+                border: none;
+                border-radius: 0px;
+            }}
+        """)
+        content_layout.addWidget(self.progress_track, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        # Umpan Balik: QLabel "BERHASIL (+10)" Tersembunyi Secara Default, Kotak Tegas Uppercase
+        self.lbl_feedback = QLabel("BERHASIL (+10)")
+        self.lbl_feedback.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_feedback.setVisible(False)
+        self.lbl_feedback.setFixedWidth(self.TRACK_WIDTH)
+        self.lbl_feedback.setStyleSheet(f"""
+            background-color: {config.INK_COLOR};
+            color: {config.BONE_COLOR};
+            border: 1px solid {config.INK_COLOR};
+            padding: 12px 24px;
+            font-size: 14px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border-radius: 0px;
+        """)
+        content_layout.addWidget(self.lbl_feedback, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        # Area Video Kamera Monokrom SABLE
+        self.lbl_camera = QLabel("KAMERA NONAKTIF // TEKAN MULAI KUIS")
+        self.lbl_camera.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_camera.setFixedSize(QSize(520, 320))
+        self.lbl_camera.setStyleSheet(f"""
+            background-color: {config.BONE_COLOR};
+            color: {config.INK_COLOR};
+            border: 1px solid {config.INK_COLOR};
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            border-radius: 0px;
+        """)
+        content_layout.addWidget(self.lbl_camera, 0, Qt.AlignmentFlag.AlignHCenter)
+
+        # Tombol Kontrol
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(16)
+
+        self.btn_toggle_camera = QPushButton("MULAI KUIS")
+        self.btn_toggle_camera.clicked.connect(self._toggle_camera)
+        btn_row.addWidget(self.btn_toggle_camera)
+
+        if self.on_back is not None:
+            self.btn_back = QPushButton("KEMBALI")
+            self.btn_back.clicked.connect(self._on_back)
+            btn_row.addWidget(self.btn_back)
+
+        content_layout.addLayout(btn_row)
+
+        center_hbox.addWidget(content_box)
+        center_hbox.addSpacerItem(
+            QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         )
-        self.lbl_score.pack(side="right", padx=25, pady=15)
 
-        # Main Viewport Container
-        content_container = ctk.CTkFrame(self, fg_color="transparent")
-        content_container.pack(fill="both", expand=True, padx=30, pady=(0, 20))
+        outer_vbox.addLayout(center_hbox)
 
-        # Kotak Kamera
-        self.camera_card = ctk.CTkFrame(
-            content_container,
-            fg_color=COLOR_BG_CARD,
-            corner_radius=CORNER_RADIUS,
+        outer_vbox.addSpacerItem(
+            QSpacerItem(20, 20, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         )
-        self.camera_card.pack(side="left", fill="both", expand=True, padx=(0, 15))
 
-        self.lbl_camera = ctk.CTkLabel(
-            self.camera_card,
-            text="Menghubungkan ke kamera...",
-            font=FONT_HEADING,
-            text_color=COLOR_TEXT_SECONDARY,
-        )
-        self.lbl_camera.pack(expand=True, fill="both", padx=15, pady=15)
+    def set_progress(self, ratio: float):
+        """Update lebar background (#101010) pada QFrame tipis secara dinamis (0.0 - 1.0)."""
+        clamped = max(0.0, min(1.0, float(ratio)))
+        fill_width = int(self.TRACK_WIDTH * clamped)
+        self.progress_fill.setGeometry(0, 0, fill_width, 2)
 
-        # Panel Instruksi & Evaluasi Samping
-        self.eval_card = ctk.CTkFrame(
-            content_container,
-            fg_color=COLOR_BG_CARD,
-            corner_radius=CORNER_RADIUS,
-            width=300,
-        )
-        self.eval_card.pack(side="right", fill="both", padx=(0, 0))
-
-        lbl_instruksi_header = ctk.CTkLabel(
-            self.eval_card,
-            text="Tantangan Isyarat:",
-            font=FONT_HEADING,
-            text_color=COLOR_TEXT_SECONDARY,
-        )
-        lbl_instruksi_header.pack(pady=(25, 5), padx=20)
-
-        # Label Huruf Instruksi Raksasa
-        self.lbl_target = ctk.CTkLabel(
-            self.eval_card,
-            text=f"Peragakan:\n[ {self.target_huruf} ]",
-            font=("Helvetica", 32, "bold"),
-            text_color=COLOR_TEXT_ACCENT,
-        )
-        self.lbl_target.pack(pady=10, padx=20)
-
-        # Indikator Ketahanan Gestur
-        self.lbl_streak = ctk.CTkLabel(
-            self.eval_card,
-            text="Tahan posisi: 0 / 20 frame",
-            font=FONT_BODY,
-            text_color=COLOR_TEXT_PRIMARY,
-        )
-        self.lbl_streak.pack(pady=10, padx=20)
-
-        self.progress_bar = ctk.CTkProgressBar(
-            self.eval_card,
-            width=220,
-            height=16,
-            corner_radius=8,
-            progress_color=COLOR_STATUS_SUCCESS,
-        )
-        self.progress_bar.set(0.0)
-        self.progress_bar.pack(pady=5, padx=20)
-
-        # Label Notifikasi Evaluasi (BENAR!)
-        self.lbl_feedback = ctk.CTkLabel(
-            self.eval_card,
-            text="",
-            font=("Helvetica", 22, "bold"),
-            text_color=COLOR_STATUS_SUCCESS,
-        )
-        self.lbl_feedback.pack(pady=20, padx=20)
-
-        self.lbl_error_status = ctk.CTkLabel(
-            self.eval_card,
-            text="",
-            font=FONT_BODY,
-            text_color=COLOR_STATUS_ERROR,
-            wraplength=260,
-        )
-        self.lbl_error_status.pack(side="bottom", pady=20, padx=15)
-
-    def _start_camera_thread(self):
-        self.vision_thread = CameraVisionThread(camera_index=0)
-        self.vision_thread.start()
-        self._update_quiz_loop()
-
-    def _update_quiz_loop(self):
-        if not self.vision_thread.frame_queue.empty():
+    @pyqtSlot(object, str, float)
+    def update_view(self, frame_rgb, predicted_label: str, confidence_score: float):
+        if frame_rgb is not None:
             try:
-                pil_img, prediction_text, error_msg = self.vision_thread.frame_queue.get_nowait()
-                if error_msg:
-                    self.lbl_camera.configure(text=error_msg, image="")
-                    self.lbl_error_status.configure(text=error_msg)
-                elif pil_img:
-                    ctk_img = ctk.CTkImage(
-                        light_image=pil_img,
-                        dark_image=pil_img,
-                        size=(560, 420),
+                if frame_rgb.ndim == 3:
+                    gray = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2GRAY)
+                else:
+                    gray = frame_rgb
+                sable = cv2.convertScaleAbs(gray, alpha=1.06, beta=0)
+                h, w = sable.shape
+                q_img = QImage(
+                    sable.data, w, h, w, QImage.Format.Format_Grayscale8
+                ).copy()
+                pixmap = QPixmap.fromImage(q_img)
+                self.lbl_camera.setPixmap(
+                    pixmap.scaled(
+                        self.lbl_camera.size(),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation,
                     )
-                    self.lbl_camera.configure(image=ctk_img, text="")
-                    self.lbl_camera.image = ctk_img
-                    self.lbl_error_status.configure(text="")
-
-                    # Logika Evaluasi Kesesuaian Gestur
-                    self._evaluate_prediction(prediction_text)
+                )
             except Exception:
                 pass
 
-        # Pembersihan pesan feedback "BENAR!" setelah beberapa tick
-        if self.feedback_timer > 0:
-            self.feedback_timer -= 1
-            if self.feedback_timer == 0:
-                self.lbl_feedback.configure(text="")
+        self._evaluate_prediction(predicted_label, confidence_score)
 
-        self.after_id = self.after(25, self._update_quiz_loop)
-
-    def _evaluate_prediction(self, prediction_text: str):
-        if not prediction_text:
+    def _evaluate_prediction(self, label: str, confidence: float):
+        if confidence < 0.7 or (label or "").strip().upper() != self.target_huruf:
+            self.hold_start_time = None
+            self.set_progress(0.0)
             return
 
-        # Normalisasi pengecekan huruf target terhadap keluaran model
-        predicted_char = prediction_text.replace("Huruf", "").strip().upper()
+        if self.hold_start_time is None:
+            self.hold_start_time = time.monotonic()
 
-        if predicted_char == self.target_huruf:
-            self.consecutive_match += 1
-        else:
-            self.consecutive_match = max(0, self.consecutive_match - 1)
+        elapsed = time.monotonic() - self.hold_start_time
+        self.set_progress(elapsed / self.hold_required)
 
-        # Update HUD progress bar & status ketahanan
-        progress_val = min(1.0, self.consecutive_match / self.CONSECUTIVE_REQUIRED)
-        self.progress_bar.set(progress_val)
-        self.lbl_streak.configure(text=f"Tahan posisi: {self.consecutive_match} / {self.CONSECUTIVE_REQUIRED} frame")
-
-        # Kondisi Menang / Validasi Berhasil
-        if self.consecutive_match >= self.CONSECUTIVE_REQUIRED:
+        if elapsed >= self.hold_required:
             self.skor += 10
-            self.lbl_score.configure(text=f"Skor: {self.skor}")
-            self.lbl_feedback.configure(
-                text="✅ BENAR! (+10)",
-                text_color=COLOR_STATUS_SUCCESS,
-            )
-            self.feedback_timer = 40  # Tampilkan pesan sekitar 1 detik
+            self.lbl_score.setText(f"03 // EVALUASI KUIS — SKOR: {self.skor}")
+            self.lbl_feedback.setText("BERHASIL (+10)")
+            self.lbl_feedback.setVisible(True)
+            self.feedback_timer.start(1300)
 
-            # Ganti Target Huruf Acak Baru
-            available_letters = [c for c in string.ascii_uppercase if c != self.target_huruf]
-            self.target_huruf = random.choice(available_letters)
-            self.lbl_target.configure(text=f"Peragakan:\n[ {self.target_huruf} ]")
-            self.consecutive_match = 0
-            self.progress_bar.set(0.0)
+            available = [c for c in string.ascii_uppercase if c != self.target_huruf]
+            self.target_huruf = random.choice(available)
+            self.lbl_target.setText(f"PERAGAKAN: [ {self.target_huruf} ]")
+            self.hold_start_time = None
+            self.set_progress(0.0)
 
-    def stop_and_exit(self):
-        if self.after_id is not None:
-            self.after_cancel(self.after_id)
-            self.after_id = None
+    def _hide_feedback(self):
+        self.lbl_feedback.setVisible(False)
 
-        if hasattr(self, "vision_thread") and self.vision_thread.is_alive():
-            self.vision_thread.stop()
-            self.vision_thread.join(timeout=1.0)
+    def _on_camera_error(self, message: str):
+        self.lbl_camera.setText(f"GALAT KAMERA // {message.upper()}")
+        self.running = False
+        self.btn_toggle_camera.setText("MULAI KUIS")
 
-        self.on_back()
+    def _toggle_camera(self):
+        if self.running:
+            self._stop_camera()
+        else:
+            self._start_camera()
 
+    def _start_camera(self):
+        if self.running:
+            return
+        self.camera_thread = CameraThread(camera_index=0, std_standar="ASL")
+        self.camera_thread.prediction_ready.connect(self.update_view)
+        self.camera_thread.error_message.connect(self._on_camera_error)
+        self.camera_thread.start()
+        self.running = True
+        self.btn_toggle_camera.setText("HENTIKAN KUIS")
+
+    def _stop_camera(self):
+        if self.camera_thread is not None:
+            try:
+                self.camera_thread.prediction_ready.disconnect(self.update_view)
+            except Exception:
+                pass
+            self.camera_thread.stop()
+            self.camera_thread = None
+        self.running = False
+        self.btn_toggle_camera.setText("MULAI KUIS")
+        self.lbl_camera.clear()
+        self.lbl_camera.setText("KAMERA NONAKTIF // TEKAN MULAI KUIS")
+        self.set_progress(0.0)
+        self.hold_start_time = None
+
+    def _on_back(self):
+        self._stop_camera()
+        if self.on_back:
+            self.on_back()
+
+    def closeEvent(self, event):
+        self._stop_camera()
+        super().closeEvent(event)
+
+
+# Alias kompatibilitas
+KuisView = KuisUI
