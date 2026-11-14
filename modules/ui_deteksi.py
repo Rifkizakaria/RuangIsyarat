@@ -203,25 +203,23 @@ class DeteksiUI(QWidget):
     def update_view(self, frame_rgb, predicted_label: str, confidence_score: float):
         """
         Slot penerima sinyal dari CameraThread.
-        Menerapkan filter monokrom SABLE (Grayscale + Contrast alpha=1.06, beta=0) khusus di level UI.
+        Menampilkan feed kamera berwarna (RGB888) pada QLabel video.
         """
         if frame_rgb is not None:
             try:
-                if frame_rgb.ndim == 3:
-                    gray_frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2GRAY)
+                if frame_rgb.ndim == 2:
+                    rgb_frame = cv2.cvtColor(frame_rgb, cv2.COLOR_GRAY2RGB)
                 else:
-                    gray_frame = frame_rgb
+                    rgb_frame = np.ascontiguousarray(frame_rgb)
 
-                sable_frame = cv2.convertScaleAbs(gray_frame, alpha=1.06, beta=0)
-
-                height, width = sable_frame.shape
-                bytes_per_line = width
+                height, width, channels = rgb_frame.shape
+                bytes_per_line = channels * width
                 q_img = QImage(
-                    sable_frame.data,
+                    rgb_frame.data,
                     width,
                     height,
                     bytes_per_line,
-                    QImage.Format.Format_Grayscale8,
+                    QImage.Format.Format_RGB888,
                 ).copy()
 
                 pixmap = QPixmap.fromImage(q_img)

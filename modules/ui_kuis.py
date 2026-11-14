@@ -5,6 +5,7 @@ import random
 import string
 import time
 import cv2
+import numpy as np
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame,
     QLabel, QPushButton, QSpacerItem, QSizePolicy
@@ -182,14 +183,14 @@ class KuisUI(QWidget):
     def update_view(self, frame_rgb, predicted_label: str, confidence_score: float):
         if frame_rgb is not None:
             try:
-                if frame_rgb.ndim == 3:
-                    gray = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2GRAY)
+                if frame_rgb.ndim == 2:
+                    rgb_frame = cv2.cvtColor(frame_rgb, cv2.COLOR_GRAY2RGB)
                 else:
-                    gray = frame_rgb
-                sable = cv2.convertScaleAbs(gray, alpha=1.06, beta=0)
-                h, w = sable.shape
+                    rgb_frame = np.ascontiguousarray(frame_rgb)
+                h, w, ch = rgb_frame.shape
+                bytes_per_line = ch * w
                 q_img = QImage(
-                    sable.data, w, h, w, QImage.Format.Format_Grayscale8
+                    rgb_frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888
                 ).copy()
                 pixmap = QPixmap.fromImage(q_img)
                 self.lbl_camera.setPixmap(

@@ -1,140 +1,119 @@
-# RuangIsyarat - Edukasi & Deteksi Bahasa Isyarat
+# RuangIsyarat — SABLE Editorial Edition
 
-Aplikasi desktop untuk pendidikan dan deteksi bahasa isyarat ASL (American Sign Language) secara real-time menggunakan computer vision dan machine learning.
+Aplikasi desktop edukasi dan deteksi bahasa isyarat (*ASL*, *SIBI*, *BISINDO*) secara *real-time* menggunakan *Computer Vision* dan *Machine Learning*. Dibangun di atas **PyQt6** dengan estetika **SABLE Editorial** (palet *Bone* `#EFEDE8` & *Ink* `#101010`, sudut tajam `0px`, sistem *grid* presisi, tipografi *hero* masif, dan *feed* kamera berwarna *real-time*).
 
-## 📖 Tentang
+---
 
-RuangIsyarat adalah aplikasi desktop yang membantu masyarakat belajar dan mendeteksi bahasa isyarat ASL melalui kamera webcam. Dibangun dengan **PyQt6** (anti-lag), OpenCV, MediaPipe, dan scikit-learn (RandomForest).
+## Fitur Utama
 
-## 🎯 Fitur Utama
+| Modul | Kelas Utama | Deskripsi Teknis |
+| :--- | :--- | :--- |
+| **Autentikasi Pengguna** | `LoginView` (`modules/ui_login.py`) | Login & registrasi lokal berbasis `data/users.json` dengan *hashing* kata sandi `SHA-256`. |
+| **Indeks Modul (Dashboard)** | `DashboardUI` (`modules/ui_dashboard.py`) | Tata letak `QGridLayout` 3 kolom dengan kartu editorial rasio `3:4` (`01 KAMUS`, `02 DETEKSI`, `03 KUIS`) dan aksi *hover* `BUKA MODUL`. |
+| **Kamus Isyarat** | `KamusUI` (`modules/ui_kamus.py`) | Katalog abjad `A–Z` dalam `QGridLayout` 4 kolom dengan *selector* standar *flat* (`ASL`, `SIBI`, `BISINDO`). |
+| **Deteksi AI Real-Time** | `DeteksiUI` (`modules/ui_deteksi.py`) | Tata letak 2 kolom asimetris: panel kiri menampilkan *Hero Text* (`120px`) & *confidence bar* datar; panel kanan merender *feed* video kamera berwarna (`RGB888`). |
+| **Mode Kuis Evaluasi** | `KuisUI` (`modules/ui_kuis.py`) | Gamifikasi terpusat dengan tipografi instruksi `100px` (`PERAGAKAN: [ X ]`), *progress bar* tipis `2px` untuk tahan pose `2.0` detik (`confidence >= 0.7`), dan umpan balik `BERHASIL (+10)`. |
+| **Thread Kamera & AI** | `CameraThread` (`core_ai/camera.py`) | Pemrosesan kamera `OpenCV` + ekstraksi 21 titik *landmark* `MediaPipe Hands` (63 fitur ternormalisasi) + inferensi `scikit-learn` di dalam `QThread` terpisah via sinyal `prediction_ready(object, str, float)`. |
 
-| Fitur | Deskripsi |
-|-------|-----------|
-| 🔐 Login & Register | Autentikasi pengguna dengan database JSON lokal |
-| 📖 Kamus Isyarat | Referensi gestur per huruf (ASL, SIBI, BISINDO) |
-| 📷 Deteksi AI Real-Time | Deteksi gestur tangan melalui webcam dengan model ML |
-| 🎯 Mode Kuis | Gamifikasi: tebak huruf, tahan pose 2 detik, dapatkan skor |
+---
 
-## 🛠️ Teknologi
+## Teknologi & Arsitektur
 
-- **Bahasa:** Python 3.12
-- **GUI:** PyQt6 (tema cerah, anti-lag, aksesibel)
-- **Computer Vision:** OpenCV + MediaPipe (21 landmark tangan)
-- **Machine Learning:** scikit-learn (RandomForest Classifier)
-- **Data:** JSON (users), CSV (landmark dataset), Pickle (model)
+- **Bahasa Pemrograman:** Python 3.12+
+- **GUI Framework:** `PyQt6` (`QMainWindow`, `QStackedWidget`, `QThread`, `pyqtSignal`, Global `QSS`)
+- **Desain Sistem:** **SABLE Editorial** (`BONE_COLOR = "#EFEDE8"`, `INK_COLOR = "#101010"`, `0px` *border-radius*, `1px solid #101010`)
+- **Computer Vision:** `OpenCV` (`opencv-python`) & `MediaPipe Hands` (21 titik koordinat 3D $x, y, z$)
+- **Machine Learning:** `scikit-learn` (`RandomForestClassifier`, disimpan & dimuat melalui `ModelStore` / `pickle`)
+- **Penyimpanan Data:** `JSON` (`data/users.json`), `CSV` (`dataset/asl_landmarks.csv`), `PKL` (`models/model_asl.pkl`)
 
-## 📁 Struktur Direktori
+---
 
-```
+## Struktur Direktori
+
+```text
 RuangIsyarat/
-├── main.py                     # Entry point aplikasi, QMainWindow routing
-├── config.py                   # Konstanta tema & warna (A11y)
+├── main.py                     # Entry point utama (QMainWindow, Sticky Header, QStackedWidget)
+├── config.py                   # Global Design Tokens (BONE_COLOR, INK_COLOR, SABLE_STYLESHEET)
+├── requirements.txt            # Daftar dependensi paket Python
+├── design.md                   # Spesifikasi UI/UX & arsitektur SABLE Editorial
+├── prd_ruangisyarat.md         # Product Requirements Document
+├── sdd_ruangisyarat.md         # Spec-Driven Development Document
+├── aturan_anti_slop.md         # Standar kualitas rekayasa kode
+│
 ├── data/
-│   └── users.json              # Database login (auto-generate list kosong)
+│   └── users.json              # Database kredensial pengguna lokal (SHA-256)
 │
 ├── dataset/
-│   └── asl_landmarks.csv       # Dataset landmark hasil ekstraksi
+│   └── asl_landmarks.csv       # Dataset 63 fitur landmark hasil ekstraksi
 │
 ├── models/
-│   └── model_asl.pkl           # Model terlatih (hasil training)
+│   └── model_asl.pkl           # Model RandomForest terlatih
 │
-├── assets/
-│   ├── asl/                    # Referensi gambar gestur
-│   └── icons/
+├── assets/                     # Aset referensi visual kamus (ASL, SIBI, BISINDO)
 │
 ├── modules/
 │   ├── __init__.py
-│   ├── auth.py                 # Login/register logic
-│   ├── ui_login.py             # Halaman login
-│   ├── ui_dashboard.py         # Dashboard utama
-│   ├── ui_kamus.py             # Kamus isyarat
-│   ├── ui_deteksi.py           # Deteksi kamera AI
-│   └── ui_kuis.py              # Mode kuis gamifikasi
+│   ├── auth.py                 # Logika autentikasi & manajemen users.json
+│   ├── ui_login.py             # Antarmuka Login & Registrasi
+│   ├── ui_dashboard.py         # Antarmuka Dashboard (3 kartu rasio 3:4)
+│   ├── ui_kamus.py             # Antarmuka Kamus (Grid 4 kolom A-Z)
+│   ├── ui_deteksi.py           # Antarmuka Deteksi AI Real-Time (Kamera Berwarna)
+│   └── ui_kuis.py              # Antarmuka Kuis Evaluasi Gestur (Kamera Berwarna)
 │
 ├── core_ai/
 │   ├── __init__.py
-│   ├── camera.py               # Thread kamera (QThread, non-blocking UI)
-│   ├── pipeline.py             # MediaPipe + inference pipeline + smoothing
-│   └── model_store.py          # Load/cache model .pkl per standar
+│   ├── camera.py               # QThread kamera + MediaPipe + prediksi ML (prediction_ready)
+│   ├── model_store.py          # Singleton cache & lazy-loader model .pkl
+│   ├── pipeline.py             # Utilitas pipeline inferensi & smoothing gestur
+│   └── data_collector.py       # Tool CLI mandiri perekam dataset CSV via webcam
 │
 └── scripts/
-    ├── download_dataset.py     # Unduh dataset ASL publik (Kaggle/GitHub)
-    ├── extract_landmarks.py    # Ekstraksi landmark gambar → CSV (63 fitur)
-    └── train_model.py          # Latih RandomForest → simpan model_asl.pkl
+    ├── download_dataset.py     # Skrip pengunduh dataset ASL
+    ├── extract_landmarks.py    # Ekstraksi paralel landmark gambar ke CSV (63 fitur)
+    └── train_model.py          # Pelatihan RandomForestClassifier ke models/model_asl.pkl
 ```
 
-## 🚀 Cara Menjalankan (Lokal)
+---
 
-### 1. Clone / Buka folder project
+## Panduan Instalasi & Menjalankan Aplikasi
+
+### 1. Persiapan Virtual Environment
 ```powershell
 cd D:\python\RuangIsyarat
-```
-
-### 2. Buat virtual environment (direkomendasikan)
-```powershell
 python -m venv venv
-venv\Scripts\Activate.ps1   # Windows
-# atau
-source venv/bin/activate    # Linux/Mac
+.\venv\Scripts\Activate.ps1
 ```
 
-### 3. Install dependensi
+### 2. Instalasi Dependensi
 ```powershell
 pip install -r requirements.txt
 ```
 
-### 4. Jalankan aplikasi
+### 3. Menjalankan Aplikasi Utama
 ```powershell
 python main.py
 ```
 
-### 5. Login
-Gunakan akun yang sudah terdaftar di `data/users.json`, atau daftar baru melalui tombol "Daftar Baru".
+---
 
-## 📦 Pipeline Training Model (Penting!)
+## Pipeline Pelatihan Model & Perekaman Data
 
-Jika folder `models/` kosong, fitur deteksi AI tidak akan berfungsi. Ikuti langkah ini:
-
+### A. Melatih Model dari Dataset Gambar ASL
+Jika ingin membangun ulang model `models/model_asl.pkl`:
 ```powershell
-# 1. Unduh dataset ASL publik
+# 1. Unduh dataset gambar ASL
 python scripts\download_dataset.py
 
-# 2. Ekstrak landmark dari gambar menjadi CSV
+# 2. Ekstrak 21 titik koordinat tangan (63 fitur ternormalisasi) ke CSV
 python scripts\extract_landmarks.py
 
-# 3. Latih model RandomForest dan simpan sebagai .pkl
+# 3. Latih model RandomForest dan simpan ke models/model_asl.pkl
 python scripts\train_model.py
 ```
 
-## 📦 File Dependencies (`requirements.txt`)
-```text
-PyQt6>=6.12.0
-opencv-python>=4.0.0
-mediapipe==0.10.14
-scikit-learn>=1.0.0
-pandas>=1.0.0
-numpy>=1.20.0
+### B. Merekam Dataset Baru melalui Webcam (Developer Tool)
+```powershell
+python core_ai\data_collector.py
 ```
-
-## 🎨 Desain & Aksesibilitas
-
-- **Tema cerah** dengan kontras tinggi (≥ 4.5:1)
-- **Font sans-serif**, ukuran besar, tebal untuk judul & hasil prediksi
-- **Tombol** target klik besar (minimal 40px tinggi) dengan indikator hover jelas
-- **Ikon visual** pendukung untuk status sukses/error (tidak hanya warna)
-- Semua elemen UI sesuai standar aksesibilitas (R-25, R-32, R-38)
-
-## ⚠️ Catatan Penting
-
-- **Model `models/model_asl.pkl`** **belum tersedia** secara default. Anda perlu melatih model terlebih dahulu agar fitur deteksi berfungsi.
-- **Webcam** diperlukan untuk fitur Deteksi dan Kuis.
-- Aplikasi berjalan **lokal di laptop**; belum ada fitur sinkronisasi cloud.
-- **Dataset 87 ribu foto** tidak disertakan di repository (terlalu besar). Anda perlu merekam sendiri via webcam atau mendownload dataset ASL terpisah.
-
-## 🤝 Kontribusi
-
-Pull request sangat diterima. Silakan buat issue terlebih dahulu untuk diskusi perubahan besar.
-
-## 📄 Lisensi
-
-MIT License
+- Arahkan tangan ke webcam, lalu tekan tombol huruf **`A–Z`** pada keyboard untuk menyimpan koordinat *landmark* ke `dataset_sibi.csv`.
+- Tekan **`ESC`** atau **`Q`** untuk keluar.
