@@ -7,12 +7,5 @@ env/
 __pycache__/
 *.py[cod]
 
-# Dokumen internal / draft
-design.md
-prd_ruangisyarat.md
-sdd_ruangisyarat.md
-aturan_anti_slop.md
-prompt_eksekusi.md
-
 *.md
 !README.md
